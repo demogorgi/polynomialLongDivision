@@ -33,7 +33,8 @@ class Array
 	end
 
 	def inspect(r=R,s=" ",var=X)
-		preinspect(r,s,X).map{ |x| x.sub(/\^{(.*)}/,hoch(x.match(/\^{(.*)}/)[1])) }.join(" + ").gsub(/ ([ ]*)0#{var}./,'  \1   ').gsub("#{X}\u2070","  ").gsub("#{X}\u00B9 ","#{X}  ")
+		puts preinspect(r,s,X).map{ |x| x.sub(/\^{(.*)}/,hoch(x.match(/\^{(.*)}/)[1])) }.join(" + ").gsub(/ ([ ]*)0#{var}./,'  \1   ').gsub("#{X}\u2070","  ").gsub("#{X}\u00B9 ","#{X}  ")
+		preinspect(r,s,X).map{ |x| x.sub(/\^{(.*)}/,hoch(x.match(/\^{(.*)}/)[1])) }.join(" + ").gsub(/ \+([ ]*)0#{var}./,'  \1   ').gsub("#{X}\u2070","  ").gsub("#{X}\u00B9 ","#{X}  ")
 	end
 
 	def mod(p=P)
