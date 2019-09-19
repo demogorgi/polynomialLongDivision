@@ -3,6 +3,12 @@ Polynomial long divison in finite fields with command line and Latex output
 
 Example:
 
+polynomial long division in finite fields by Uwe Gotzes 
+
+Arguments:
+
+Dividend, divisor, charakteristic of the finite field, variable symbol
+
 ```
 >ruby pd.rb "3,0,0,1,1" "4,0,3" 5 x
 ```
