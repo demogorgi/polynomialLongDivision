@@ -1,4 +1,5 @@
 require 'prime'
+require 'pp'
 
 # polynomial long division in finite fields by Uwe Gotzes 
 #
@@ -20,21 +21,82 @@ class Array
 		length-1
 	end
 
-	def preinspect(r=R,s=" ",var=X)
-		self.each_with_index.map do |x,i| 
-			if x.nil?
-				"0".rjust(r,s)
-			elsif i == self.deg
-				"   " + (x.to_s).rjust(r,s)
-			else
-				(x.to_s).rjust(r,s)
-			end + "#{X}^{#{i}}"
-		end.reverse
+	def maxLen
+		map{ |x| x.to_s.length }.max
 	end
 
+	# für Latex-Ausgabe
+	# macht aus [nil,1,0,3,5] -> ["5x^{4}","3x^{3}","0x^{2}","1x",nil]
+	def preinspect
+	    tmp = self.each_with_index.map{ |x,i| 
+		if x.nil?
+		else
+		    if i == 0
+			x.to_s
+		    elsif i == 1
+			x.to_s + "#{X}"
+		    else
+			x.to_s + "#{X}^{#{i}}"
+		    end
+		end
+	    }.reverse
+	    res = tmp
+	    # macht aus ["5x^{4}","3x^{3}","0x^{2}","1x",nil] -> ["5x^{4}","3x^{3}",nil,"x",nil]
+	    tmp.each_with_index{ |x,i|
+		if x.nil? or x[0] == "0"
+		    res[i] = nil
+		elsif x[0] == "1" and !(x[1].nil?)
+		    res[i] = x[1..-1]
+		else
+		    res[i] = x
+		end
+	    }
+	    res
+	end
+
+	# für stdout
 	def inspect(r=R,s=" ",var=X)
-		puts preinspect(r,s,X).map{ |x| x.sub(/\^{(.*)}/,hoch(x.match(/\^{(.*)}/)[1])) }.join(" + ").gsub(/ ([ ]*)0#{var}./,'  \1   ').gsub("#{X}\u2070","  ").gsub("#{X}\u00B9 ","#{X}  ")
-		preinspect(r,s,X).map{ |x| x.sub(/\^{(.*)}/,hoch(x.match(/\^{(.*)}/)[1])) }.join(" + ").gsub(/ \+([ ]*)0#{var}./,'  \1   ').gsub("#{X}\u2070","  ").gsub("#{X}\u00B9 ","#{X}  ")
+		# macht aus [nil,1,0,3,5] -> ["5x\u2074", "3x\u00B3", nil, "x", nil]
+		tmp = preinspect.map{ |x| 
+		    if x =~ /\^{(.*)}/
+			x.sub(/\^{(.*)}/,hoch(x.match(/\^{(.*)}/)[1]))
+		    else
+			x
+		    end
+		}
+		res = ""
+		# macht aus tmp den String für stdout
+		tmp.each_with_index{ |x,i|
+		    if x.nil?
+			res += "   " + "".rjust(r,s)
+		    elsif i == 0
+			res += "   " + x.rjust(r,s)
+		    elsif tmp[0..(i-1)].any?{|d| d != nil}
+			res += " + " + x.rjust(r,s)
+		    else
+			res += "   " + x.rjust(r,s)
+		    end
+		}
+		res
+	end
+
+	def latex(str=nil)
+		new_ary = []
+		each_with_index.map{ |x,i|	
+			if x.nil?
+				new_ary.push ["&","&"]
+			elsif i == 0
+				new_ary.push ["&",str,"&",self[i]]
+			elsif (self[0..i-1].all? &:nil?) and self[i] != nil
+				new_ary.push ["&",str,"&",self[i]]
+			elsif self[i] != nil
+				new_ary.push ["&","+","&",self[i]]
+			end
+			if self[i] != nil and self[i+1..-1].all? &:nil? and str
+				new_ary.push ["&",")"]
+			end
+		}
+		new_ary.flatten.join(" ")
 	end
 
 	def mod(p=P)
@@ -51,7 +113,6 @@ end
 
 # Charakteristik des Primzahlkörpers Z/pZ
 P = ARGV[2].to_i
-R = P.to_s.length
 
 # Fehlerbehandlung
 if P.to_s != ARGV[2] or !(Prime.prime?(P))
@@ -62,6 +123,7 @@ end
 dividend = ARGV[0].split(",").map{ |x| x.to_i  }.mod
 divisor = ARGV[1].split(",").map{ |x| x.to_i }.mod
 D = dividend.clone
+R = D.preinspect.maxLen
 
 # Fehlerbehandlung
 if dividend.deg < divisor.deg
@@ -70,7 +132,7 @@ end
 
 # Fehlerbehandlung
 if dividend.last == 0 or divisor.last == 0
-	raise ArgumentError, "Die Listen dürfen nicht mit 0 enden. Köchste Potenz darf nicht 0 sein."
+	raise ArgumentError, "Die Listen dürfen nicht mit 0 enden. Höchste Potenz darf (modulo #{P}) nicht 0 sein."
 end
 
 # inverses Element bzgl. Multiplikation
@@ -150,7 +212,7 @@ end
 
 def fill(ary,int=D.deg)
 	ary_tmp = ary.clone
-	(D.deg - ary.deg).times{ ary_tmp << 0 }
+	(D.deg - ary.deg).times{ ary_tmp << nil }
 	ary_tmp
 end
 
@@ -158,48 +220,42 @@ end
 loesung = Array.new(dividend.deg-divisor.deg+1)
 i = 0
 stringoutput = []
-latexoutput = "\\documentclass{report}\n\\usepackage[landscape=true]{geometry}\n\\begin{document}\n$\\begin{array}{#{"r" * (2 * D.deg + 6)}}\naufgabe\n"
+latexoutput = [
+	"\\documentclass{report}",
+	"\\usepackage[landscape=true]{geometry}",
+	"\\begin{document}",
+	"$\\begin{array}{#{"r" * (2 * D.deg + 6)}}"
+]
 until dividend.deg < divisor.deg do
 	i += 1
 	puts "--------"
 	print "dividend: "
-	p dividend
+	pp dividend.preinspect
 	print "divisor: "
-	p divisor
+	pp divisor.preinspect
 	print "Ergebnis teile: "
-	p t1 = teile(dividend, divisor)
+	pp t1 = teile(dividend, divisor)
 	loesung[-i] = t1[-1]
 	print "Lösung: "
-	p loesung
+	pp loesung
 	print "Ergebnis polymult: "
-	p t2 = polymult(t1,divisor)
-	stringoutput << ("   " + " " * R + "  ") * (i-1) + "- (#{t2.inspect})".sub(/\s+\)/," )")
-	latexoutput << "&   & " + fill(t2).preinspect.join(" &   & ") + " &   & \\\\\\cline{#{2*i}-#{2*i+3*divisor.deg}}\\\\[-1.5ex]\n"
+	pp t2 = polymult(t1,divisor)
+	stringoutput << ("   " + " " * R) * (i-1) + " -(#{t2.inspect})".sub(/\s+\)/,")")
+	latexoutput << fill(t2).preinspect.latex("-(") + "\\\\\\cline{#{2*i}-#{2*i+3*divisor.deg-1}}\\\\[-1.5ex]"
 	stringoutput << "-------------------------------------------------------------"
 	print "Ergebnis minuend: "
-	p t3 = minuend(t1,dividend)
+	pp t3 = minuend(t1,dividend)
 	print "Ergebnis polyadd: "
-	p t4 = polyadd(t3,polymult([-1],t2))
+	pp t4 = polyadd(t3,polymult([-1],t2))
 	print "Ergebnis runterholen: "
-	p dividend = runterholen(t4,t1,D)
-	stringoutput << "   " + ("   " + " " * R + "  ") * i + "#{dividend.inspect}"
-	latexoutput << "&   & " + fill(dividend).preinspect.join(" &   & ") + " &   & \\\\\n"
+	pp dividend = runterholen(t4,t1,D)
+	stringoutput << "   " + ("   " + " " * R) * i + "#{dividend.inspect}"
+	latexoutput << fill(dividend).preinspect.latex() + " &   & \\\\"
 end
 stringoutput.insert(0, "  (#{D.inspect}) : (#{divisor.inspect}) = #{loesung.inspect}")
-latexoutput << "\\end{array}$\n\\end{document}"
-latexoutput.sub!("aufgabe","& ( & #{D.preinspect.join(" &  & ")} & ) & : (#{divisor.preinspect.join(" + ")}) = #{loesung.preinspect.join(" + ")} \\\\\\")
-latexoutput.gsub!(/ 0#{X}\^\{[0-9]*\}/,"     ")               # Koeffizient 0 -> Term löschen
-latexoutput.gsub!(/(^[& ]+)(&(?=[ 0-9]).*line.*)/,'\1-(\2')   # "-(" an der richtigen Stelle einfügen
-latexoutput.gsub!(/(&)([& ]+\\\\\\)/,'\1)\2')                 # ")" an der richtigen Stelle einfügen
-latexoutput.gsub!(/ 1(#{X}\^\{[0-9]*\})/,'\1')                # Koeffizient 1 -> Koeffizient löschen
-latexoutput.gsub!(/(&[ ]*)(&[ ]*[\w\d])/,'\1+\2')             # auf übelste Art die "+" einschleusen
-latexoutput.gsub!(/#{X}\^\{0\}/,"   ")                        # Exponent 0 -> Monom löschen
-latexoutput.gsub!(/#{X}\^\{1\} /,"#{X}   ")                   # Exponent 1 -> Exponent löschen
-latexoutput.gsub!(/\+[ ]*\+/,"+")                             # zwei Plus hintereinander löschen (kann beim Divisor vorkommen)
-latexoutput.gsub!(/^([& ]*)\+/,'\1')                          # auf übelste Art störende "+" wieder löschen
-latexoutput.gsub!(/\+([& )]*\\)/,'\1')                        # auf übelste Art störende "+" wieder löschen
-latexoutput.gsub!("-(&)","&")                                 # falls der Subtrahend leer ist
-latexoutput.gsub!(/\+([& ]+\))/,'\1')                         # noch ein störendes "+" entfernen
+latexoutput += ["\\end{array}$","\\end{document}"]
+latexoutput.insert(4,"#{D.preinspect.latex("(")} & & : (#{divisor.preinspect.latex.gsub("&","")}) = #{loesung.preinspect.latex.gsub("&","")} \\\\\\")
+latexoutput = latexoutput.join("\n")
 File.write("x.tex",latexoutput)
 system("pdflatex x.tex")
 puts "\nschriftliche Division in Z/#{P}Z:\n\n"
@@ -207,4 +263,3 @@ puts stringoutput
 puts "\n\n"
 print "Also:"
 puts "#{D.inspect} = (#{loesung.mod.inspect}) * (#{divisor.inspect}) + #{dividend.mod.inspect}"
-puts latexoutput
