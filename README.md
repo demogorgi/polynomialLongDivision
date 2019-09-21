@@ -3,7 +3,7 @@ Polynomial long divison in finite fields with command line and Latex output by U
 
 Example:
 
-Arguments are dividend, divisor, charakteristic of the finite field, variable symbol
+Arguments are dividend, divisor, characteristic of the finite field, variable symbol
 ```
 >ruby pd.rb "3,0,0,1,1" "4,0,3" 5 x
 ```
