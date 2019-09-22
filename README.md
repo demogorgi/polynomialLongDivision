@@ -1,5 +1,5 @@
 # polynomialLongDivision
-Polynomial long divison in finite fields with command line and Latex output by Uwe Gotzes 
+Polynomial long divison in finite fields with shell and Latex output by Uwe Gotzes 
 
 Example:
 
