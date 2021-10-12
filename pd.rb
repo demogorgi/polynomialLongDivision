@@ -45,7 +45,7 @@ class Array
 	    tmp.each_with_index{ |x,i|
 		if x.nil? or x[0] == "0"
 		    res[i] = nil
-		elsif x[0] == "1" and !(x[1].nil?)
+		elsif x =~ /^1#{X}/
 		    res[i] = x[1..-1]
 		else
 		    res[i] = x
