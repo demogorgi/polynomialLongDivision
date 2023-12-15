@@ -6,13 +6,14 @@ require 'pp'
 # Invocation:
 # >ruby pd.rb "3,0,0,1,1" "4,0,3" 5 x
 #
-# Arguments: Dividend, divisor, charakteristic of the finite field, variable symbol
+# Arguments: Dividend, divisor, characteristic of the finite field, variable symbol
 #
 
 if ARGV.length < 2
 	puts "Invocation:"
 	puts ">ruby pd.rb \"3,0,0,1,1\" \"4,0,3\" 5 x"
-	puts "Arguments: Dividend, divisor, charakteristic of the finite field, variable symbol"
+	puts "Arguments: Dividend, divisor, characteristic of the finite field, variable symbol"
+        puts "If 1 is used for the characteristic computations will be done within the real numbers!"
 end
 
 # Anpassungen an Array für die Interpretation als Polynom mit Koeffizienten in Z/pZ
@@ -100,7 +101,11 @@ class Array
 	end
 
 	def mod(p=P)
-		map{ |x| x % p }
+          if p == 1
+            self
+          else
+	    map{ |x| x % p }
+          end
 	end
 end
 
@@ -115,13 +120,13 @@ end
 P = ARGV[2].to_i
 
 # Fehlerbehandlung
-if P.to_s != ARGV[2] or !(Prime.prime?(P))
-	raise ArgumentError, "#{ARGV[2]} ist keine Primzahl."
+if P.to_s != ARGV[2] and ( P != 1 or !(Prime.prime?(P)) )
+	raise ArgumentError, "#{ARGV[2]} ist weder 1 noch eine Primzahl."
 end
 
 # Polynome in Z/pZ in der
-dividend = ARGV[0].split(",").map{ |x| x.to_i  }.mod
-divisor = ARGV[1].split(",").map{ |x| x.to_i }.mod
+dividend = ARGV[0].split(",").map{ |x| P == 1 ? x.to_f : x.to_i }.mod
+divisor = ARGV[1].split(",").map{ |x| P == 1 ? x.to_f : x.to_i }.mod
 D = dividend.clone
 R = D.preinspect.maxLen
 
@@ -136,8 +141,12 @@ if dividend.last == 0 or divisor.last == 0
 end
 
 # inverses Element bzgl. Multiplikation
-def inverses(int, prime=P)
-	(0..prime-1).to_a.map{ |x| ( x * int ) % prime == 1 }.find_index{ |b| b == true }
+def inverses(num, p=P)
+  if p == 1
+    1.0 / num
+  else
+    (0..p-1).to_a.map{ |x| ( x * num ) % p == 1 }.find_index{ |b| b == true }
+  end
 end
 
 def hoch(string)
@@ -258,7 +267,11 @@ latexoutput.insert(4,"#{D.preinspect.latex("(")} & & : (#{divisor.preinspect.lat
 latexoutput = latexoutput.join("\n")
 File.write("x.tex",latexoutput)
 system("pdflatex x.tex")
-puts "\nschriftliche Division in Z/#{P}Z:\n\n"
+if P == 1
+  puts "\nschriftliche Division in R:\n\n"
+else
+  puts "\nschriftliche Division in Z/#{P}Z:\n\n"
+end
 puts stringoutput
 puts "\n\n"
 print "Also:"
