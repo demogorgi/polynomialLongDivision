@@ -1,9 +1,10 @@
 # polynomialLongDivision
-Polynomial long divison in finite fields with shell and Latex output by Uwe Gotzes 
+Polynomial long divison in finite fields with shell and Latex output by Uwe Gotzes
 
 Example:
 
 Arguments are dividend, divisor, characteristic of the finite field, variable symbol
+(The calculations are done within the real numbers if 1 is chosen as characteristic)
 ```
 >ruby pd.rb "3,0,0,1,1" "4,0,3" 5 x
 ```
