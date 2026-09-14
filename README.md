@@ -3,7 +3,11 @@
 Polynomial long division, worked out step by step, with shell and LaTeX output.
 By Uwe Gotzes.
 
-Coefficients may live in a prime field **Z/pZ** or in the **rational numbers**.
+Coefficients may live in the field **Z/pZ** for a prime p, or in the **rational numbers**.
+Both the shell output and the PDF state the polynomial ring the division runs
+in — `Z/5Z[x]`, `Q[t]` — because the same coefficients mean different things
+over different rings.
+
 The calculation is laid out in the Central European notation taught in
 German-speaking classrooms — dividend and divisor on one line, joined by `:`,
 the quotient after the `=`, and the subtraction steps underneath:
@@ -52,14 +56,14 @@ never runs off the edge; only the type gets smaller.
 
 ## Examples
 
-### In a finite field
+### In a field of prime order
 
 ```
 ruby pd.rb "3,0,0,1,1" "4,0,3" 5 x
 ```
 
 ```
-Long division in Z/5Z:
+Long division in Z/5Z[x]:
 
   (    x⁴ +  x³             +   3) : (3x² + 4) = 2x² + 2x + 4
  -(    x⁴       + 3x²)
@@ -82,7 +86,7 @@ ruby pd.rb "-6,11,-6,1" "-2,1"
 ```
 
 ```
-Long division in Q:
+Long division in Q[x]:
 
   (     x³ -  6x² +  11x -    6) : (x - 2) = x² - 4x + 3
  -(     x³ -  2x²)
@@ -115,7 +119,8 @@ ruby pd.rb --pdf "3,0,0,1,1" "4,0,3" 5 x
 Ruby 3.0 or newer, no gems.
 
 `pdflatex` is only needed for `--pdf`. The generated document uses `geometry`,
-`amsmath` and `adjustbox`, all part of a standard TeX Live or MiKTeX install.
+`amsmath`, `amssymb` and `adjustbox`, all part of a standard TeX Live or MiKTeX
+install.
 
 ## Tests
 
@@ -129,7 +134,8 @@ ruby test/test_pd.rb
 
 | Part | Responsibility |
 | --- | --- |
-| `Field`, `PrimeField`, `RationalField` | The coefficient domain: parsing, arithmetic, inverses, rendering. |
+| `Field`, `PrimeOrderField`, `RationalField` | The coefficient field: parsing, arithmetic, inverses, rendering. |
+| `PolynomialRing` | Field plus variable — the ring the division runs in, `Z/5Z[x]`. |
 | `Polynomial` | Coefficients in ascending order of the exponent, plus `+`, `-`, `*`. |
 | `LongDivision` | The school algorithm, keeping every intermediate step. |
 | `ShellFormatter`, `LatexFormatter` | The two renderings of the same tableau. |

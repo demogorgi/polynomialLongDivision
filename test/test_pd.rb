@@ -14,6 +14,22 @@ class FieldTest < Minitest::Test
     assert_instance_of RationalField, Field.build(1)
   end
 
+  # 1 is only a legacy spelling of "not a finite field". There is no field of
+  # characteristic 1, so the field it builds must not claim to have one.
+  def test_the_legacy_alias_does_not_become_a_characteristic
+    assert_equal 0, Field.build(1).characteristic
+  end
+
+  def test_fields_report_their_characteristic
+    assert_equal 0, Field.build(0).characteristic
+    assert_equal 5, Field.build(5).characteristic
+  end
+
+  def test_a_composite_order_is_refused_by_the_field_itself
+    error = assert_raises(ArgumentError) { PrimeOrderField.new(4) }
+    assert_match(/not prime/, error.message)
+  end
+
   def test_build_rejects_a_composite_characteristic
     error = assert_raises(ArgumentError) { Field.build(4) }
     assert_match(/prime/, error.message)
@@ -49,6 +65,52 @@ class FieldTest < Minitest::Test
 
   def test_rational_field_rejects_nonsense
     assert_raises(ArgumentError) { Field.build(0).parse("banana") }
+  end
+
+  def test_fields_with_the_same_characteristic_are_equal
+    assert_equal Field.build(5), Field.build(5)
+    assert_equal Field.build(0), Field.build(0)
+    assert_equal Field.build(0).hash, Field.build(1).hash
+  end
+
+  def test_different_fields_are_not_equal
+    refute_equal Field.build(5), Field.build(7)
+    refute_equal Field.build(5), Field.build(0)
+  end
+
+  def test_a_field_is_not_equal_to_something_that_is_not_a_field
+    refute_equal Field.build(5), 5
+    refute_equal Field.build(5), "Z/5Z"
+  end
+
+  def test_fields_can_be_used_as_hash_keys
+    counts = Hash.new(0)
+    counts[Field.build(5)] += 1
+    counts[Field.build(5)] += 1
+    counts[Field.build(7)] += 1
+
+    assert_equal({ Field.build(5) => 2, Field.build(7) => 1 }, counts)
+  end
+
+  def test_fields_name_themselves_but_not_a_variable
+    assert_equal "Z/5Z", Field.build(5).name
+    assert_equal "Q", Field.build(0).name
+    assert_equal "\\mathbb{Z}/5\\mathbb{Z}", Field.build(5).latex_name
+    assert_equal "\\mathbb{Q}", Field.build(0).latex_name
+  end
+end
+
+# The tableau alone is ambiguous, so both outputs name the ring the division
+# runs in - which also says which symbol is the variable.
+class PolynomialRingTest < Minitest::Test
+  def test_the_ring_combines_the_field_with_the_variable
+    assert_equal "Z/5Z[x]", PolynomialRing.new(Field.build(5), "x").name
+    assert_equal "Q[t]", PolynomialRing.new(Field.build(0), "t").name
+  end
+
+  def test_the_ring_has_a_latex_spelling
+    assert_equal "\\mathbb{Z}/5\\mathbb{Z}[x]", PolynomialRing.new(Field.build(5), "x").latex_name
+    assert_equal "\\mathbb{Q}[t]", PolynomialRing.new(Field.build(0), "t").latex_name
   end
 end
 
@@ -109,6 +171,18 @@ class PolynomialTest < Minitest::Test
   def test_monomial
     poly = Polynomial.monomial(3, 2, @q)
     assert_equal Polynomial.parse("0,0,3", @q), poly
+  end
+
+  # Ruby considers 1 and Rational(1) equal, so the coefficients alone cannot
+  # tell these two apart - only the field they are read in does.
+  def test_polynomials_over_different_fields_are_not_equal
+    refute_equal Polynomial.parse("1,1", @f5), Polynomial.parse("1,1", @q)
+  end
+
+  def test_polynomials_can_be_used_as_hash_keys
+    seen = { Polynomial.parse("1,1", @f5) => :mod5 }
+    assert_equal :mod5, seen[Polynomial.parse("1,1", @f5)]
+    assert_nil seen[Polynomial.parse("1,1", @q)]
   end
 end
 
@@ -332,9 +406,23 @@ class LatexFormatterTest < Minitest::Test
     assert_includes LatexFormatter.new("x").document(division), "\\frac{1}{2}"
   end
 
+  # The printed sheet has to say what it is a division in; the same digits mean
+  # different things over Q than over Z/pZ.
+  def test_the_document_names_the_ring
+    assert_includes @document, "Long division in $\\mathbb{Z}/5\\mathbb{Z}[x]$"
+    assert_includes @document, "\\usepackage{amssymb}"
+  end
+
+  def test_the_heading_follows_the_chosen_variable
+    document = LatexFormatter.new("t").document(
+      LongDivision.new(Polynomial.parse("1,0,1", @f5), Polynomial.parse("1,1", @f5))
+    )
+    assert_includes document, "\\mathbb{Z}/5\\mathbb{Z}[t]"
+  end
+
   # However long the polynomials get, the tableau is kept on the page.
   def test_the_tableau_is_capped_to_the_page_in_both_directions
-    assert_includes @document, "max totalsize={\\textwidth}{\\textheight}"
+    assert_includes @document, "max totalsize={\\textwidth}{0.9\\textheight}"
   end
 
   def test_a_short_division_stays_upright
@@ -388,7 +476,7 @@ class CLITest < Minitest::Test
   def test_readme_example_succeeds
     status, out, = run_cli(["3,0,0,1,1", "4,0,3", "5", "x"])
     assert_equal 0, status
-    assert_includes out, "Long division in Z/5Z:"
+    assert_includes out, "Long division in Z/5Z[x]:"
     assert_includes out, "Check:"
   end
 
@@ -428,13 +516,13 @@ class CLITest < Minitest::Test
   def test_a_negative_leading_coefficient_is_not_mistaken_for_an_option
     status, out, = run_cli(["-6,11,-6,1", "-2,1", "0", "x"])
     assert_equal 0, status
-    assert_includes out, "Long division in Q:"
+    assert_includes out, "Long division in Q[x]:"
   end
 
   def test_the_characteristic_defaults_to_the_rational_numbers
     status, out, = run_cli(["2,3,1", "1,1"])
     assert_equal 0, status
-    assert_includes out, "Long division in Q:"
+    assert_includes out, "Long division in Q[x]:"
   end
 
   def test_the_variable_defaults_to_x

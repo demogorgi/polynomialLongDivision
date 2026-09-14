@@ -33,22 +33,36 @@ require "optparse"
 # Subclasses only need to supply +parse+, +normalize+, +inverse+ and +name+;
 # everything else is expressed in terms of those.
 class Field
-  # Builds the field the user asked for on the command line.
+  # Builds the field the user asked for on the command line: characteristic 0
+  # selects the rational numbers, a prime p selects Z/pZ.
   #
-  # A characteristic of 0 (or 1, kept as an alias for backwards compatibility)
-  # selects the rational numbers, any prime p selects Z/pZ.
+  # 1 is accepted as well, but only because earlier versions of this script
+  # used it for "not a finite field". There is no field of characteristic 1:
+  # char = 1 means 1 = 0, which leaves the zero ring, and that is not a field.
+  LEGACY_RATIONAL_ALIAS = 1
+
   def self.build(characteristic)
     case characteristic
-    when 0, 1 then RationalField.new
-    else PrimeField.new(characteristic)
+    when 0, LEGACY_RATIONAL_ALIAS then RationalField.new
+    else
+      unless PrimeOrderField.prime?(characteristic)
+        raise ArgumentError,
+              "characteristic must be 0 (rational numbers) or a prime number, got #{characteristic}"
+      end
+
+      PrimeOrderField.new(characteristic)
     end
   end
 
   def zero = 0
   def zero?(value) = value.zero?
   def one?(value) = value == 1
-  def negative?(_value) = false
-  def magnitude(value) = value
+
+  # Both of these answer a question about rendering, not about algebra. Z/pZ is
+  # not an ordered field, so none of its elements is "negative" and none has a
+  # magnitude; there the answer is simply that no minus sign is ever printed.
+  def prints_with_minus?(_value) = false
+  def without_sign(value) = value
 
   # How a coefficient looks when it stands in front of a variable. Only the
   # rational numbers need to deviate from the plain rendering.
@@ -59,19 +73,33 @@ class Field
   def multiply(a, b) = normalize(a * b)
   def negate(a) = normalize(-a)
 
+  # Two coefficient fields are the same when they are the same kind of field
+  # and agree in their characteristic. The characteristic alone would not be
+  # enough in general - Q and R share it - so the class takes part in the
+  # comparison, which keeps this correct if another field is ever added.
+  def ==(other)
+    other.class == self.class && other.characteristic == characteristic
+  end
+  alias eql? ==
+
+  def hash = [self.class, characteristic].hash
+
   def to_s = name
 end
 
-# The prime field Z/pZ. Every coefficient is represented by its smallest
-# non-negative residue, so 0 <= coefficient < p.
-class PrimeField < Field
+# A field of prime order, Z/pZ. Every field with p elements is isomorphic to
+# this one, which is what makes the order alone a complete description.
+#
+# ("Prime field" would be the looser term: it means a field without proper
+# subfields, and RationalField is one of those too.)
+#
+# Every coefficient is represented by its smallest non-negative residue, so
+# 0 <= coefficient < p.
+class PrimeOrderField < Field
   attr_reader :characteristic
 
   def initialize(characteristic)
-    unless self.class.prime?(characteristic)
-      raise ArgumentError,
-            "characteristic must be 0 (rational numbers) or a prime number, got #{characteristic}"
-    end
+    raise ArgumentError, "#{characteristic} is not prime" unless self.class.prime?(characteristic)
 
     super()
     @characteristic = characteristic
@@ -116,6 +144,7 @@ class PrimeField < Field
   def coefficient_to_s(value) = value.to_s
   def coefficient_to_latex(value) = value.to_s
   def name = "Z/#{characteristic}Z"
+  def latex_name = "\\mathbb{Z}/#{characteristic}\\mathbb{Z}"
 end
 
 # The rational numbers. Input may be given as "3", "-3", "1/2" or "0.5"; the
@@ -130,14 +159,17 @@ class RationalField < Field
   def normalize(value) = Rational(value)
   def zero = Rational(0)
 
+  # No multiple of 1 is ever 0 in Q, so the characteristic is 0.
+  def characteristic = 0
+
   def inverse(value)
     raise ZeroDivisionError, "0 has no multiplicative inverse in #{name}" if value.zero?
 
     1 / Rational(value)
   end
 
-  def negative?(value) = value.negative?
-  def magnitude(value) = value.abs
+  def prints_with_minus?(value) = value.negative?
+  def without_sign(value) = value.abs
 
   def coefficient_to_s(value)
     value.denominator == 1 ? value.numerator.to_s : "#{value.numerator}/#{value.denominator}"
@@ -157,11 +189,31 @@ class RationalField < Field
   end
 
   def name = "Q"
+  def latex_name = "\\mathbb{Q}"
 end
 
 # --------------------------------------------------------------------------
 # Polynomials
 # --------------------------------------------------------------------------
+
+# The ring the division actually takes place in: polynomials in one variable
+# over a field, written Z/5Z[x] or Q[t].
+#
+# The field on its own cannot name it. It knows that it is Z/5Z, but which
+# symbol is the variable is not its business - only the two together say what
+# the tableau in front of the reader is a division in.
+class PolynomialRing
+  attr_reader :field, :variable
+
+  def initialize(field, variable)
+    @field = field
+    @variable = variable
+  end
+
+  def name = "#{field.name}[#{variable}]"
+  def latex_name = "#{field.latex_name}[#{variable}]"
+  def to_s = name
+end
 
 # A polynomial over a given field.
 #
@@ -193,8 +245,11 @@ class Polynomial
     new(Array.new(exponent, field.zero) << coefficient, field)
   end
 
-  # The zero polynomial has degree -1 here, which keeps the comparisons in the
-  # division loop simple without needing a special case.
+  # Conventionally deg(0) is left undefined or set to minus infinity. Here the
+  # zero polynomial reports -1, which is the largest value that keeps
+  # "degree < divisor.degree" true for every divisor and so lets the division
+  # loop end without a special case. Callers that print a degree guard with
+  # zero? first.
   def degree = coefficients.length - 1
   def zero? = coefficients.empty?
   def leading_coefficient = coefficients.last
@@ -220,12 +275,15 @@ class Polynomial
     self.class.new(product, field)
   end
 
+  # The coefficients have to match and they have to be read in the same field:
+  # [1] over Z/5Z and [1] over Q hold numerically equal entries but are not the
+  # same polynomial.
   def ==(other)
-    other.is_a?(Polynomial) && coefficients == other.coefficients && field.name == other.field.name
+    other.is_a?(Polynomial) && coefficients == other.coefficients && field == other.field
   end
   alias eql? ==
 
-  def hash = [coefficients, field.name].hash
+  def hash = [coefficients, field].hash
 
   def to_s(variable = "x") = ShellFormatter.new(variable).polynomial(self)
 
@@ -406,8 +464,8 @@ class ShellFormatter
     coefficient = poly.coefficient(exponent)
     return nil if field.zero?(coefficient)
 
-    negative = field.negative?(coefficient)
-    body = term_body(field.magnitude(coefficient), exponent)
+    negative = field.prints_with_minus?(coefficient)
+    body = term_body(field.without_sign(coefficient), exponent)
 
     return [" " * SEPARATOR_WIDTH, negative ? "-#{body}" : body] if exponent == poly.degree
 
@@ -475,13 +533,20 @@ class LatexFormatter
       \\documentclass[a4paper]{article}
       \\usepackage[#{geometry_options(division)}]{geometry}
       \\usepackage{amsmath}
+      \\usepackage{amssymb}
       \\usepackage{adjustbox}
       \\pagestyle{empty}
       \\begin{document}
+      % Without naming the ring the tableau is ambiguous: the same coefficients
+      % mean different things over Q than over Z/pZ.
+      \\begin{center}
+      Long division in $#{PolynomialRing.new(field, variable).latex_name}$
+      \\end{center}
       % Long polynomials can outgrow even the wider of the two page shapes.
       % "max totalsize" shrinks the tableau just enough to keep it on the paper,
       % in width and in height; one that already fits keeps its natural size.
-      \\begin{adjustbox}{max totalsize={\\textwidth}{\\textheight},center}
+      % The heading needs a little of the height, hence 0.9 rather than 1.
+      \\begin{adjustbox}{max totalsize={\\textwidth}{0.9\\textheight},center}
       $\\begin{array}{#{'r' * column_count}}
       #{body(division).join("\n")}
       \\end{array}$
@@ -581,8 +646,8 @@ class LatexFormatter
     coefficient = poly.coefficient(exponent)
     return nil if field.zero?(coefficient)
 
-    negative = field.negative?(coefficient)
-    body = term_body(field.magnitude(coefficient), exponent)
+    negative = field.prints_with_minus?(coefficient)
+    body = term_body(field.without_sign(coefficient), exponent)
     return ["", negative ? "-#{body}" : body] if exponent == poly.degree
 
     [negative ? "-" : "+", body]
@@ -748,7 +813,7 @@ class CLI
     print_steps(division, shell) if options.verbose
 
     out.puts
-    out.puts "Long division in #{field.name}:"
+    out.puts "Long division in #{PolynomialRing.new(field, variable).name}:"
     out.puts
     out.puts shell.division(division)
     out.puts
