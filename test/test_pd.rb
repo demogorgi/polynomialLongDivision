@@ -616,3 +616,92 @@ class CLITest < Minitest::Test
     [status, out.string, err.string]
   end
 end
+
+# Two complete calculations, pinned down character for character.
+#
+# The tests above check the pieces - a term here, a column offset there - but
+# none of them would notice if the assembled tableau drifted. These two do, and
+# between them they cover the cases that are easy to get wrong: a divisor whose
+# leading coefficient needs inverting, a remainder that collapses to a single
+# term, exponents of two digits inside the grid, and a division that comes out
+# exact.
+#
+# Both results were verified by hand before being recorded here.
+class RenderedTableauTest < Minitest::Test
+  # 3 is not invertible by inspection: 3 * 2 == 6 == 1 in Z/5Z, so the first
+  # quotient term is 2x^3 / 3x == 4x^2. After the first subtraction only "x^2"
+  # is left standing, and the next subtrahend reaches into a column that the
+  # line above leaves empty.
+  EXPECTED_Z5 = <<~OUTPUT
+
+    Long division in Z/5Z[x]:
+
+      (   2x³ + 4x²       +   1) : (3x + 2) = 4x² + 2x + 2
+     -(   2x³ + 3x²)
+    ------------------------------------------------------
+                 x²
+           -(    x² +  4x)
+    ------------------------------------------------------
+                        x +   1
+                 -(     x +   4)
+    ------------------------------------------------------
+                              2
+
+    Check: 2x³ + 4x² + 1 = (4x² + 2x + 2) · (3x + 2) + (2)
+  OUTPUT
+
+  # Division in GF(2)[x], as it turns up in coding theory. Every coefficient is
+  # 1, so no term ever prints its coefficient; the exponents run to two digits
+  # and still have to line up across fourteen columns; and the division is
+  # exact, so the last remainder is the zero polynomial.
+  EXPECTED_GF2 = <<~OUTPUT
+
+    Long division in Z/2Z[x]:
+
+      (   x¹³ + x¹² + x¹¹ + x¹⁰ +  x⁹ +  x⁸       +  x⁶ +  x⁵ +  x⁴ +  x³ +  x² +   x) : (x⁷ + x⁶ + x³ + x) = x⁶ + x⁴ + x + 1
+     -(   x¹³ + x¹²             +  x⁹       +  x⁷)
+    -------------------------------------------------------------------------------------------------------------------------
+                      x¹¹ + x¹⁰       +  x⁸ +  x⁷ +  x⁶ +  x⁵ +  x⁴
+                 -(   x¹¹ + x¹⁰             +  x⁷       +  x⁵)
+    -------------------------------------------------------------------------------------------------------------------------
+                                         x⁸       +  x⁶       +  x⁴ +  x³ +  x² +   x
+                                   -(    x⁸ +  x⁷             +  x⁴       +  x²)
+    -------------------------------------------------------------------------------------------------------------------------
+                                               x⁷ +  x⁶             +  x³       +   x
+                                         -(    x⁷ +  x⁶             +  x³       +   x)
+    -------------------------------------------------------------------------------------------------------------------------
+                                                                                          0
+
+    Check: x¹³ + x¹² + x¹¹ + x¹⁰ + x⁹ + x⁸ + x⁶ + x⁵ + x⁴ + x³ + x² + x = (x⁶ + x⁴ + x + 1) · (x⁷ + x⁶ + x³ + x)
+  OUTPUT
+
+  def test_a_divisor_with_an_invertible_leading_coefficient
+    assert_equal EXPECTED_Z5, render("1,0,4,2", "2,3", "5")
+  end
+
+  def test_an_exact_division_in_gf2_with_two_digit_exponents
+    assert_equal EXPECTED_GF2, render("0,1,1,1,1,1,1,0,1,1,1,1,1,1", "0,1,0,1,0,0,1,1", "2")
+  end
+
+  # Guards the two above: if the formatter ever left padding at the end of a
+  # line, the heredocs would silently stop matching for a reason that is hard
+  # to see in a diff.
+  def test_neither_tableau_carries_trailing_whitespace
+    [EXPECTED_Z5, EXPECTED_GF2].each do |expected|
+      expected.lines(chomp: true).each do |line|
+        assert_equal line.rstrip, line, "trailing whitespace in #{line.inspect}"
+      end
+    end
+  end
+
+  private
+
+  def render(*argv)
+    out = StringIO.new
+    err = StringIO.new
+    status = CLI.run(argv, out: out, err: err)
+
+    assert_equal 0, status, err.string
+    out.string
+  end
+end
