@@ -7,3 +7,7 @@ division.pdf
 *.log
 *.out
 *.synctex.gz
+
+# Output of pre-2026 versions, which wrote to x.tex
+x.tex
+x.pdf

@@ -215,6 +215,22 @@ class LongDivisionTest < Minitest::Test
     assert_includes ShellFormatter.new("x").polynomial(division.quotient), "1/2"
   end
 
+  # The same bug in its worst shape. Of the quotient (1/2)x - 1/2 only the
+  # positive term used to be swallowed - "-1/2" does not begin with a "0" - so
+  # the old output read
+  #
+  #   x^2 - 1 = (-0.5) * (2x + 2)
+  #
+  # which is false, yet looks like a finished answer rather than a visibly
+  # broken one. That is the dangerous kind of wrong for a teaching tool.
+  def test_a_partly_dropped_quotient_is_reported_in_full
+    division = divide("-1,0,1", "2,2", @q)
+
+    assert_equal Polynomial.parse("-1/2,1/2", @q), division.quotient
+    assert division.exact?
+    assert_equal "(1/2)x - 1/2", ShellFormatter.new("x").polynomial(division.quotient)
+  end
+
   def test_dividend_of_lower_degree_yields_quotient_zero
     division = divide("1,1", "0,0,1", @f5)
     assert division.quotient.zero?
@@ -675,8 +691,32 @@ class RenderedTableauTest < Minitest::Test
     Check: x¹³ + x¹² + x¹¹ + x¹⁰ + x⁹ + x⁸ + x⁶ + x⁵ + x⁴ + x³ + x² + x = (x⁶ + x⁴ + x + 1) · (x⁷ + x⁶ + x³ + x)
   OUTPUT
 
+  # Over Q, where the terms carry signs and fractions. This is the calculation
+  # that the version of 2023-12-15 got visibly wrong: of the quotient it
+  # printed only "-0.5", because "(1/2)x" rendered as "0.5x" back then and
+  # every term whose text began with a "0" was taken for a zero term. The
+  # result looked finished and was false.
+  EXPECTED_Q = <<~OUTPUT
+
+    Long division in Q[x]:
+
+      (       x²          -      1) : (2x + 2) = (1/2)x - 1/2
+     -(       x² +      x)
+    ---------------------------------------------------------
+                       -x -      1
+              -(       -x -      1)
+    ---------------------------------------------------------
+                                 0
+
+    Check: x² - 1 = ((1/2)x - 1/2) · (2x + 2)
+  OUTPUT
+
   def test_a_divisor_with_an_invertible_leading_coefficient
     assert_equal EXPECTED_Z5, render("1,0,4,2", "2,3", "5")
+  end
+
+  def test_fractions_and_signs_over_the_rational_numbers
+    assert_equal EXPECTED_Q, render("-1,0,1", "2,2", "0")
   end
 
   def test_an_exact_division_in_gf2_with_two_digit_exponents
@@ -687,7 +727,7 @@ class RenderedTableauTest < Minitest::Test
   # line, the heredocs would silently stop matching for a reason that is hard
   # to see in a diff.
   def test_neither_tableau_carries_trailing_whitespace
-    [EXPECTED_Z5, EXPECTED_GF2].each do |expected|
+    [EXPECTED_Z5, EXPECTED_Q, EXPECTED_GF2].each do |expected|
       expected.lines(chomp: true).each do |line|
         assert_equal line.rstrip, line, "trailing whitespace in #{line.inspect}"
       end
